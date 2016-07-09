@@ -1,0 +1,11 @@
+flags: {}
+packages:
+- '.'
+- location:
+      git: https://github.com/BNFC/bnfc
+      commit: 66d0275f3a42cb72ea80296ef7d10349a0b1b6bf
+  subdirs: 
+    - source
+  extra-dep: true
+extra-deps:
+resolver: lts-6.6

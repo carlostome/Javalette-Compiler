@@ -2,7 +2,7 @@
 module Backend.CodeGenLLVM (genCode) where
 
 import           Backend.LLVM
-  
+
 import           Javalette.Abs
 import           Javalette.ErrM
 import           Internal.Types
@@ -54,7 +54,7 @@ initialEnv tags structs classes =
       M.foldWithKey
          (\(Ident id) (ClassInfo _ pF fields _) accum
             -> M.insert id (map (\(StrField type' (Ident field))
-                                   -> (field, toPrimTy type')) (pF ++ fields)) accum) M.empty classes 
+                                   -> (field, toPrimTy type')) (pF ++ fields)) accum) M.empty classes
   , tags = tags }
 -- | Definition of the code generator monad.
 type GenCode a = CMS.State Env a
@@ -89,7 +89,7 @@ genCode (structs, classes, defs) = do
                   -> accum ++ [TypeDecl name $
                                map (toPrimTy . (\(StrField t _) -> t)) fields])
                [] structs
-                  
+
           tags        =
             fst $ foldl
                 (\(tags,next) (MethodDef _ _ (Ident id) _ _ _) ->
@@ -97,37 +97,37 @@ genCode (structs, classes, defs) = do
                        Nothing -> (M.insert id next tags,next+1)
                        Just _  -> (tags,next))
              (M.empty,0) (concatMap snd . M.toList . M.map methods $ classes)
-                         
-          userClasses = 
+
+          userClasses =
             M.foldWithKey
               (\(Ident className) (ClassInfo superT parentFields fields methods) classList
                   -> concat [ classList
-                            , [TypeDecl className $ Ptr (Def "ClassDescriptor"):map (toPrimTy . (\(StrField t _) -> t)) (parentFields ++ fields)] 
+                            , [TypeDecl className $ Ptr (Def "ClassDescriptor"):map (toPrimTy . (\(StrField t _) -> t)) (parentFields ++ fields)]
                             , genClassDescriptor tags className superT methods ]
               ) [] classes
 
--- | Generates the descriptor of a class. It has to point to the parent class 
+-- | Generates the descriptor of a class. It has to point to the parent class
 -- descriptor and to a linked list of methods of the class (the inherited are not included).
 genClassDescriptor :: Map Id Integer -> String -> [Ident] -> [FnDef] -> [TopLevel]
-genClassDescriptor tags className parents methods = 
-                    GlobalDecl (Def "ClassDescriptor") ("ClassDescriptor." ++ className) 
+genClassDescriptor tags className parents methods =
+                    GlobalDecl (Def "ClassDescriptor") ("ClassDescriptor." ++ className)
                     [ (Ptr (Def "ClassDescriptor"), getParent parents)
                     , (Ptr (Def "ClassMethod"), getMethod methods)]
                     : genMethodChain methods
   where
        getParent list = maybe (Const Null) (\(Ident x) -> Global $ "ClassDescriptor." ++ x) $ listToMaybe list
        getMethod list = maybe (Const Null) (\(MethodDef _ (Ident className) (Ident mName) _ _ _) -> Global ("ClassMethod." ++ className ++ "." ++ mName)) $ listToMaybe list
-       
+
        genMethodChain [] = []
        genMethodChain [method] = [genMethodEntry method Nothing]
        genMethodChain (method:tail@(MethodDef _ _ (Ident next) _ _ _:_)) = genMethodChain tail ++ [genMethodEntry method (Just next)]
-       
-       genMethodEntry (MethodDef ret_type (Ident className) (Ident mName) _ args _) next = 
+
+       genMethodEntry (MethodDef ret_type (Ident className) (Ident mName) _ args _) next =
           GlobalDecl (Def "ClassMethod") ("ClassMethod." ++ fullName)
           [ (I64, Const $ CI64 $ (fromJust $ M.lookup mName tags))
           , (Ptr (Def "ClassMethod")
           , case next of
-              Nothing -> Const Null 
+              Nothing -> Const Null
               Just x -> Global $ "ClassMethod." ++ className ++ "." ++ x)
           , ( Ptr I8, Const (LitCode $ concat [ "bitcast ("
           , show (toPrimTy ret_type)
@@ -211,7 +211,7 @@ toPrimTy t = case t of
                DimT ty 0  -> toPrimTy ty
                DimT ty n  -> ArrayT (toPrimTy ty) n
                Pointer (Ident id)  -> Ptr (Def id)
-               Object (Ident name) _ -> Ptr (Def name) 
+               Object (Ident name) _ -> Ptr (Def name)
                String     -> Ptr I8
 
 -- | Creates a new label.
@@ -243,7 +243,7 @@ removeBlock = do
 -- | Generates the code of a function.
 genCodeFunction :: FnDef -> GenCode Function
 genCodeFunction (FunDef t (Ident id) args block) = do
-  newFunction 
+  newFunction
   mapM_ (\(Argument t ident@(Ident id)) -> do
            addr <- freshVar ident t
            emit $ NonTerm (IAlloc (toPrimTy t)) (Just addr)
@@ -254,7 +254,7 @@ genCodeFunction (FunDef t (Ident id) args block) = do
   return $ mkFun id (toPrimTy t) (toPrimArgs args) (reverse instr)
 
 genCodeFunction (MethodDef t (Ident className) (Ident id) (Argument objType _) args block) = do
-  newFunction  
+  newFunction
   addr <- freshVar (Ident "self") objType
   emit $ NonTerm (IAlloc (toPrimTy objType)) (Just addr)
   castedAddr <- freshLocal
@@ -317,7 +317,7 @@ genCodeItem rawtype (Init id expr@(ETyped innerExpr innerType)) = do
 genCodeLVal :: LVal -> GenCode Register
 genCodeLVal lval  =
   case lval of
-    LValVar id _ -> 
+    LValVar id _ ->
       do (addr,_) <- lookUpVar id
          return addr
 
@@ -330,15 +330,15 @@ genCodeLVal lval  =
                  case strFields of
                    Nothing -> fmap ((+1) . fromIntegral) . elemIndex field . map fst $ fromJust classAttr
                    Just fields  -> fmap fromIntegral . elemIndex field . map fst $ fields
-                              
+
            debugger  "Calculate the address of the field"
            fieldAddr <- freshLocal
-           emit $ NonTerm (GetElementPtr ptr str [(I32, Const (CI32 0))
-                                                       ,(I32, Const (CI32 indx))])
+           emit $ NonTerm (GetElementPtr (Def name) ptr str [(I32, Const (CI32 0))
+                                                            ,(I32, Const (CI32 indx))])
                   (Just fieldAddr)
            return fieldAddr
     _ -> error $ show lval
-         
+
 -- | Generates the code of an statement.
 genCodeStmt :: Stmt -> GenCode ()
 genCodeStmt stmt = case stmt of
@@ -371,7 +371,7 @@ genCodeStmt stmt = case stmt of
                        arrayAddr <- freshLocal
                        emit $
                          NonTerm
-                           (GetElementPtr (Ptr ty) (Reg sourceStr)
+                           (GetElementPtr ty (Ptr ty) (Reg sourceStr)
                               [(I32, Const (CI32 0)), (I32, Const (CI32 3))])
                            (Just arrayAddr)
                        array <- freshLocal
@@ -380,7 +380,7 @@ genCodeStmt stmt = case stmt of
                        lenAddr <- freshLocal
                        emit $
                          NonTerm
-                           (GetElementPtr (Ptr ty) (Reg sourceStr)
+                           (GetElementPtr ty (Ptr ty) (Reg sourceStr)
                               [(I32, Const (CI32 0)), (I32, Const (CI32 0))])
                            (Just lenAddr)
                        len <- freshLocal
@@ -390,7 +390,7 @@ genCodeStmt stmt = case stmt of
                        sizeE <- freshLocal
                        emit $
                          NonTerm
-                           (GetElementPtr (Ptr ty') (Const Null) [(I32, Const (CI32 1))])
+                           (GetElementPtr ty' (Ptr ty') (Const Null) [(I32, Const (CI32 1))])
                            (Just pointerE)
                        emit $ NonTerm (PtrToInt (Ptr ty') pointerE I32) (Just sizeE)
                        debugger "Calculate the total number of elements"
@@ -408,7 +408,7 @@ genCodeStmt stmt = case stmt of
                            (ICall (Ptr I8) "@memcpy"
                               [(Ptr I8, Reg castArray2), (Ptr I8, Reg castArray1),
                                (I32, Reg sizeTotal)])
-                           (Just dummy)       
+                           (Just dummy)
                 Ptr (Def _)  ->
                   if  innerExpr == NullC then
                     emit $ NonTerm (IStore addr value ty) Nothing
@@ -418,16 +418,16 @@ genCodeStmt stmt = case stmt of
                        emit $ NonTerm (BitCast (toPrimTy innerType) valPtr ty)
                               (Just castedPtr)
                        emit $ NonTerm (IStore addr (Reg castedPtr) ty) Nothing
-                       
+
                 _     ->  emit $ NonTerm (IStore addr value ty) Nothing
 
          LValStr _ _ ->
            do value <- genCodeExpr expr
               addr  <- genCodeLVal lval
               emit $ NonTerm (IStore addr value (toPrimTy t)) Nothing
-                      
+
   Incr (LValTyped lval t) ->
-    do addr      <- genCodeLVal lval      
+    do addr      <- genCodeLVal lval
        rt   <- freshLocal
        rt2  <- freshLocal
        let ty = toPrimTy t
@@ -439,7 +439,7 @@ genCodeStmt stmt = case stmt of
        emit $ NonTerm (IStore addr (Reg rt2) ty) Nothing
 
   Decr (LValTyped lval t) ->
-    do addr      <- genCodeLVal lval      
+    do addr      <- genCodeLVal lval
        rt   <- freshLocal
        rt2  <- freshLocal
        let ty = toPrimTy t
@@ -499,7 +499,7 @@ genCodeExpr (ETyped expr t) = case expr of
   Var id index -> do
     (addr,ty) <- lookUpVar id
     case ty of
-      ArrayT ty' nDim 
+      ArrayT ty' nDim
                   | null index ->
                     do elem <- freshLocal
                        emit $ NonTerm (ILoad addr ty) (Just elem)
@@ -517,7 +517,7 @@ genCodeExpr (ETyped expr t) = case expr of
                        dimsArrayAddr <- freshLocal
                        emit $
                          NonTerm
-                           (GetElementPtr (Ptr ty) (Reg addr)
+                           (GetElementPtr ty (Ptr ty) (Reg addr)
                               [(I32, Const (CI32 0)), (I32, Const (CI32 2))])
                            (Just dimsArrayAddr)
                        dimsArray <- freshLocal
@@ -525,13 +525,13 @@ genCodeExpr (ETyped expr t) = case expr of
                        newDims <- freshLocal
                        emit $
                          NonTerm
-                           (GetElementPtr (Ptr I32) (Reg dimsArray)
+                           (GetElementPtr I32 (Ptr I32) (Reg dimsArray)
                               [(I32, Const . CI32 . fromIntegral . length $ index)])
                            (Just newDims)
                        newDimsAddr <- freshLocal
                        emit $
                          NonTerm
-                           (GetElementPtr (Ptr ty) (Reg strAddr)
+                           (GetElementPtr ty (Ptr ty) (Reg strAddr)
                               [(I32, Const (CI32 0)), (I32, Const (CI32 2))])
                            (Just newDimsAddr)
                        emit $ NonTerm (IStore newDimsAddr (Reg newDims) (Ptr I32)) Nothing
@@ -541,7 +541,7 @@ genCodeExpr (ETyped expr t) = case expr of
                                          do dimAddr <- freshLocal
                                             emit $
                                               NonTerm
-                                                (GetElementPtr (Ptr I32) (Reg dimsArray) [(I32, idx)])
+                                                (GetElementPtr I32 (Ptr I32) (Reg dimsArray) [(I32, idx)])
                                                 (Just dimAddr)
                                             currentDimLen <- freshLocal
                                             emit $ NonTerm (ILoad dimAddr I32) (Just currentDimLen)
@@ -555,7 +555,7 @@ genCodeExpr (ETyped expr t) = case expr of
                        newLengthAddr <- freshLocal
                        emit $
                          NonTerm
-                           (GetElementPtr (Ptr ty) (Reg strAddr)
+                           (GetElementPtr ty (Ptr ty) (Reg strAddr)
                               [(I32, Const (CI32 0)), (I32, Const (CI32 0))])
                            (Just newLengthAddr)
 		       emit $ NonTerm (IStore newLengthAddr arrLength I32) Nothing
@@ -563,7 +563,7 @@ genCodeExpr (ETyped expr t) = case expr of
                        newElemAddr <- freshLocal
                        emit $
                          NonTerm
-                           (GetElementPtr (Ptr ty) (Reg strAddr)
+                           (GetElementPtr ty (Ptr ty) (Reg strAddr)
                               [(I32, Const (CI32 0)), (I32, Const (CI32 3))])
                            (Just newElemAddr)
                        emit $
@@ -582,14 +582,14 @@ genCodeExpr (ETyped expr t) = case expr of
 
     debugger "Calculating the address of the indexed dimension"
     dimArrayAddr <- freshLocal
-    emit $ NonTerm (GetElementPtr (Ptr ty) (Reg addr) [(I32, Const (CI32 0))
+    emit $ NonTerm (GetElementPtr ty (Ptr ty) (Reg addr) [(I32, Const (CI32 0))
                                                       ,(I32, Const (CI32 2))])
            (Just dimArrayAddr)
 
     dimArray <- freshLocal
     emit $ NonTerm (ILoad dimArrayAddr (Ptr I32)) (Just dimArray)
     dimAddr  <- freshLocal
-    emit $ NonTerm (GetElementPtr (Ptr I32) (Reg dimArray)
+    emit $ NonTerm (GetElementPtr I32 (Ptr I32) (Reg dimArray)
                                     [(I32, Const (CI32 indexedDims))])
            (Just dimAddr)
 
@@ -600,11 +600,11 @@ genCodeExpr (ETyped expr t) = case expr of
   ENew _ exprDims ->
     if null exprDims then
       case t of
-        (Pointer (Ident name)) -> 
+        (Pointer (Ident name)) ->
          do debugger "Allocate memory for the structure in the heap"
             pointerE       <- freshLocal
             sizeE          <- freshLocal
-            emit $ NonTerm (GetElementPtr (Ptr (Def name)) (Const Null) [(I32, Const (CI32 1))])
+            emit $ NonTerm (GetElementPtr (Def name) (Ptr (Def name)) (Const Null) [(I32, Const (CI32 1))])
                  (Just pointerE)
             emit $ NonTerm (PtrToInt (Ptr (Def name)) pointerE I32) (Just sizeE)
 
@@ -618,7 +618,7 @@ genCodeExpr (ETyped expr t) = case expr of
          do debugger "Allocate memory for the structure (object) in the heap"
             pointerE       <- freshLocal
             sizeE          <- freshLocal
-            emit $ NonTerm (GetElementPtr (Ptr (Def name)) (Const Null) [(I32, Const (CI32 1))])
+            emit $ NonTerm (GetElementPtr (Def name) (Ptr (Def name)) (Const Null) [(I32, Const (CI32 1))])
                  (Just pointerE)
             emit $ NonTerm (PtrToInt (Ptr (Def name)) pointerE I32) (Just sizeE)
 
@@ -628,7 +628,7 @@ genCodeExpr (ETyped expr t) = case expr of
                                                    (Just voida)
             emit $ NonTerm (BitCast (Ptr I8) voida (Ptr (Def name))) (Just newStr)
             classDescriptorAddr <- freshLocal
-            emit $ NonTerm (GetElementPtr (Ptr (Def name)) (Reg newStr) [(I32, Const (CI32 0)), (I32, Const (CI32 0))]) (Just classDescriptorAddr)
+            emit $ NonTerm (GetElementPtr (Def name) (Ptr (Def name)) (Reg newStr) [(I32, Const (CI32 0)), (I32, Const (CI32 0))]) (Just classDescriptorAddr)
             emit $ NonTerm (IStore classDescriptorAddr (Global ("ClassDescriptor." ++ name)) (Ptr (Def "ClassDescriptor"))) Nothing
             return (Reg newStr)
     else do
@@ -649,14 +649,14 @@ genCodeExpr (ETyped expr t) = case expr of
 
       debugger "Saving the length in the structure"
       lenAddr <- freshLocal
-      emit $ NonTerm (GetElementPtr (Ptr type') (Reg str) [(I32, Const (CI32 0))
+      emit $ NonTerm (GetElementPtr type' (Ptr type') (Reg str) [(I32, Const (CI32 0))
                                                        ,(I32, Const (CI32 0))])
              (Just lenAddr)
       emit $ NonTerm (IStore lenAddr (Reg length) I32) Nothing
 
       debugger "Saving the number of dimensions"
       numDimAddr <- freshLocal
-      emit $ NonTerm (GetElementPtr (Ptr type') (Reg str) [(I32, Const (CI32 0))
+      emit $ NonTerm (GetElementPtr type' (Ptr type') (Reg str) [(I32, Const (CI32 0))
                                                        ,(I32, Const (CI32 1))])
              (Just numDimAddr)
       emit $ NonTerm (IStore numDimAddr (Const (CI32 nDim)) I32) Nothing
@@ -664,7 +664,7 @@ genCodeExpr (ETyped expr t) = case expr of
       debugger "Allocation of array for holding partial dimensions"
       pointerI32       <- freshLocal
       sizeI32          <- freshLocal
-      emit $ NonTerm (GetElementPtr (Ptr I32) (Const Null) [(I32, Const (CI32 1))])
+      emit $ NonTerm (GetElementPtr I32 (Ptr I32) (Const Null) [(I32, Const (CI32 1))])
              (Just pointerI32)
       emit $ NonTerm (PtrToInt (Ptr I32) pointerI32 I32) (Just sizeI32)
 
@@ -676,7 +676,7 @@ genCodeExpr (ETyped expr t) = case expr of
 
       debugger "Save the dimension array in the structure"
       dimArrayAddr <- freshLocal
-      emit $ NonTerm (GetElementPtr (Ptr type') (Reg str) [(I32, Const (CI32 0))
+      emit $ NonTerm (GetElementPtr type' (Ptr type') (Reg str) [(I32, Const (CI32 0))
                                                       ,(I32, Const (CI32 2))])
              (Just dimArrayAddr)
       emit $ NonTerm (IStore dimArrayAddr (Reg dimArray) (Ptr I32)) Nothing
@@ -685,7 +685,7 @@ genCodeExpr (ETyped expr t) = case expr of
       foldM_ (\index dimExpr ->
                do
                  elemAddr          <- freshLocal
-                 emit $ NonTerm (GetElementPtr (Ptr I32) (Reg dimArray)
+                 emit $ NonTerm (GetElementPtr I32 (Ptr I32) (Reg dimArray)
                                                  [(I32, Const (CI32 index))])
                         (Just elemAddr)
                  emit $ NonTerm (IStore elemAddr dimExpr I32) Nothing
@@ -694,7 +694,7 @@ genCodeExpr (ETyped expr t) = case expr of
       debugger "Allocate memory for the array of elements"
       pointerE       <- freshLocal
       sizeE          <- freshLocal
-      emit $ NonTerm (GetElementPtr (Ptr ty) (Const Null) [(I32, Const (CI32 1))])
+      emit $ NonTerm (GetElementPtr ty (Ptr ty) (Const Null) [(I32, Const (CI32 1))])
              (Just pointerE)
       emit $ NonTerm (PtrToInt (Ptr ty) pointerE I32) (Just sizeE)
 
@@ -705,7 +705,7 @@ genCodeExpr (ETyped expr t) = case expr of
 
       debugger  "Store the array of elements"
       elemArrayAddr <- freshLocal
-      emit $ NonTerm (GetElementPtr (Ptr type') (Reg str) [(I32, Const (CI32 0))
+      emit $ NonTerm (GetElementPtr type' (Ptr type') (Reg str) [(I32, Const (CI32 0))
                                                        ,(I32, Const (CI32 3))])
              (Just elemArrayAddr)
       emit $ NonTerm (IStore elemArrayAddr (Reg elemArray) (Ptr ty)) Nothing
@@ -722,7 +722,7 @@ genCodeExpr (ETyped expr t) = case expr of
        field     <- freshLocal
        emit $ NonTerm (ILoad fieldAddr (toPrimTy t)) (Just field)
        return (Reg field)
-              
+
   NullC  -> return (Const Null)
 
   ELitInt n        -> return $ Const (CI32 n)
@@ -743,18 +743,18 @@ genCodeExpr (ETyped expr t) = case expr of
               return (Reg rr)
   MApp (Ident id) obj exprs  ->
     do let retTy  = toPrimTy t
-           objTy  = getTypeExpr obj
+           objTy@(Ptr ty)  = getTypeExpr obj
            argsTy = map getTypeExpr exprs
-                       
+
        Reg evObj     <- genCodeExpr obj
        evArgs        <- mapM genCodeExpr exprs
 
        debugger "Get class descriptor from object"
 
        classDescrAddr    <- freshLocal
-       emit $ NonTerm (GetElementPtr objTy (Reg evObj) [(I32, Const (CI32 0))
+       emit $ NonTerm (GetElementPtr ty objTy (Reg evObj) [(I32, Const (CI32 0))
                                                        ,(I32, Const (CI32 0))])
-                                                       
+
               (Just classDescrAddr)
 
        classDescr    <- freshLocal
@@ -764,29 +764,29 @@ genCodeExpr (ETyped expr t) = case expr of
        debugger "Get method from dispatcher"
 
        Just tag <- CMS.gets (M.lookup id . tags)
-                   
+
        methodPtr     <- freshLocal
        emit $ NonTerm (ICall (Ptr I8) "@dispatcher" [(I64
                                                      , Const (CI32 tag))
                                                     ,(Ptr $ Def "ClassDescriptor"
                                                      , Reg classDescr)])
               (Just methodPtr)
-            
+
        debugger "Cast method to its actual type"
 
        castedMethod  <- freshLocal
        emit $ NonTerm (BitCast (Ptr I8) methodPtr (F retTy (Ptr I8 : argsTy)))
               (Just castedMethod)
-                
+
        debugger "Cast object to i8*"
-                
+
        castedAddr <- freshLocal
        emit $ NonTerm (BitCast objTy evObj (Ptr I8))
               (Just castedAddr)
 
        let args = (Ptr I8,Reg castedAddr) : zip argsTy evArgs
            fun  = show castedMethod
-                  
+
        case retTy of
          V ->
            do emit $ NonTerm (ICall retTy  fun args) Nothing
@@ -800,7 +800,7 @@ genCodeExpr (ETyped expr t) = case expr of
     tmp             <- freshLocal
     loc@(Register r)             <- freshGlobal
     addGlobalStr loc str
-    emit $ NonTerm (Lit (concat ["getelementptr [", show (length str + 1), "x i8]*"
+    emit $ NonTerm (Lit (concat ["getelementptr [", show (length str + 1), "x i8], [", show (length str + 1), "x i8]*"
                                         , " @", r ,", i32 0, i32 0"])) (Just tmp)
 
     return (Reg tmp)
@@ -900,7 +900,7 @@ findArrIndex ty@(ArrayT ty' nDim) addr index = do
 
     debugger "Load array of dimensions"
     dimArrayAddr <- freshLocal
-    emit $ NonTerm (GetElementPtr (Ptr ty) (Reg addr) [(I32, Const (CI32 0))
+    emit $ NonTerm (GetElementPtr ty (Ptr ty) (Reg addr) [(I32, Const (CI32 0))
                                                       ,(I32, Const (CI32 2))])
            (Just dimArrayAddr)
 
@@ -915,7 +915,7 @@ findArrIndex ty@(ArrayT ty' nDim) addr index = do
            foldM (\partial idx ->
                     do
                       indexAddr <- freshLocal
-                      emit $ NonTerm (GetElementPtr (Ptr I32) (Reg dimArray)
+                      emit $ NonTerm (GetElementPtr I32 (Ptr I32) (Reg dimArray)
                                                       [(I32, idx)])
                              (Just indexAddr)
                       dimension <- freshLocal
@@ -932,7 +932,7 @@ findArrIndex ty@(ArrayT ty' nDim) addr index = do
 
     debugger "Get the array of elements"
     elemArrayAddr <- freshLocal
-    emit $ NonTerm (GetElementPtr (Ptr ty) (Reg addr) [(I32, Const (CI32 0))
+    emit $ NonTerm (GetElementPtr ty (Ptr ty) (Reg addr) [(I32, Const (CI32 0))
                                                       ,(I32, Const (CI32 3))])
            (Just elemArrayAddr)
     elemArray     <- freshLocal
@@ -940,7 +940,7 @@ findArrIndex ty@(ArrayT ty' nDim) addr index = do
 
     debugger "Get the address of the element"
     elemAddr      <- freshLocal
-    emit $ NonTerm (GetElementPtr (Ptr ty') (Reg elemArray) [(I32, elemIndex)])
+    emit $ NonTerm (GetElementPtr ty' (Ptr ty') (Reg elemArray) [(I32, elemIndex)])
            (Just elemAddr)
     return elemAddr
 

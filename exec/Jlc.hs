@@ -5,12 +5,12 @@ import           Javalette.ErrM
 import           Javalette.Lex
 import           Javalette.Par
 import           Javalette.Print
-import           System.Cmd            (system)
 import           System.Environment    (getArgs)
 import           System.Exit           (ExitCode (..), exitFailure, exitSuccess,
                                         exitWith)
 import           System.FilePath.Posix (dropExtension, dropFileName)
 import           System.IO             (hPutStrLn, stderr)
+import           System.Process        (system)
 
 import           Backend.CodeGenLLVM
 import           Frontend.Desugar

@@ -18,6 +18,9 @@ graderTestSuite/
 
 src/Javalette/
 
+tester/Grade
+.stack-work
+.cabal-sandbox
 *.aux
 *.toc
 *.log

@@ -22,19 +22,14 @@ cmd c = do
   putStrLn out
   putStrLn err
 
-
-makeAbsolute p = do
-  c <- getCurrentDirectory
-  return (c </> p)
-
 maybeBuild _ [] = return ()
 maybeBuild groupPath0 ((tarOpt,subm) : _) = do
    cmd $ "tar -C "++groupPath0 ++" -"++ tarOpt++"xvf "++ show (groupPath0 </> subm)
    cmd $ "make -C " ++ show (groupPath0 </> "src")
-   
+
 testAll compiler bs exts [testSuitePath00, groupPath0] = do
   allFiles <- getDirectoryContents groupPath0
-  let submissions = [(opts, s) | 
+  let submissions = [(opts, s) |
                     (opts, suff) <- [("z", ".tar.gz"), ("j", ".tar.bz2"), ("j", ".tar.bzip2"), ("", ".tar")],
                     s <- filter (suff `isSuffixOf`) allFiles]
   maybeBuild groupPath0 submissions
@@ -45,7 +40,7 @@ testAll compiler bs exts [testSuitePath00, groupPath0] = do
 
   exePath <- makeAbsolute exePath0
   groupPath <- makeAbsolute groupPath0
- 
+
   testSuitePath <- makeAbsolute testSuitePath0
   curDir <- getCurrentDirectory
   let exeDir = takeDirectory exePath
@@ -57,7 +52,7 @@ testAll compiler bs exts [testSuitePath00, groupPath0] = do
                    "JVM"  : _ -> Just testJVM
                    "LLVM" : _ -> Just testLLVM
                    "x86" : _ -> Just testx86
-                   b : _ -> error ("Unknown backend: " ++ b) 
+                   b : _ -> error ("Unknown backend: " ++ b)
   setCurrentDirectory exeDir
   summary <- forM (testSpecs testProg exts libpath) $ \(points, name, tests) -> do
     putStrLn $ name ++ "..."
@@ -65,7 +60,7 @@ testAll compiler bs exts [testSuitePath00, groupPath0] = do
         testFiles <- getTestFilesForPath (testSuitePath </> p)
         putStrLn $ p ++ "..."
         rs <- testFunction exePath good testFiles
-        report p rs 
+        report p rs
         return (p, rs)
     putStrLn $ "Passed suites: " ++ (concat $ intersperse ", " $ [p | (p,rs) <- results, and rs])
     let tally = concat (map snd results)
@@ -79,17 +74,17 @@ testAll compiler bs exts [testSuitePath00, groupPath0] = do
 padl n s = replicate (n - length s) ' ' ++ s
 
 
-summaryLine (name, points, tests) = 
+summaryLine (name, points, tests) =
   padl 2 (show points) ++ " " ++ name ++ " " ++ "(" ++ show (length (filter id tests)) ++ "/" ++ show (length tests) ++ ")"
 
-testSpecs testProg exts libpath = 
-  (0, "Compiling core programs",     [(True, "good",testCompilation), (False, "bad", testCompilation)]) : 
-  map (\x -> (0,"Compiling extension " ++ x,[(True,"extensions/"++x,testCompilation)])) exts ++ 
-  case testProg of   
+testSpecs testProg exts libpath =
+  (0, "Compiling core programs",     [(True, "good",testCompilation), (False, "bad", testCompilation)]) :
+  map (\x -> (0,"Compiling extension " ++ x,[(True,"extensions/"++x,testCompilation)])) exts ++
+  case testProg of
      Nothing -> []
      Just backEnd ->
-      (0, "Running core programs",        [(True, "good",backEnd libpath)]) : 
-      map (\x -> (1,"Running extension " ++ x,[(True,"extensions/"++x,backEnd libpath)])) exts 
+      (0, "Running core programs",        [(True, "good",backEnd libpath)]) :
+      map (\x -> (1,"Running extension " ++ x,[(True,"extensions/"++x,backEnd libpath)])) exts
 
 
 
@@ -122,4 +117,4 @@ main = do
             hPutStrLn stderr (concat errs ++ usageInfo "" flags)
             exitWith (ExitFailure 1)
 
- where defaultSearchList = [] 
+ where defaultSearchList = []
